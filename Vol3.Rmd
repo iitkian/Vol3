@@ -1,0 +1,1220 @@
+---
+title: "Annexures"
+author: ''
+date: ''
+output:
+  pdf_document: 
+  toc: yes
+  toc_depth: 2
+classoption: landscape, legalpaper, twoside
+header-includes:
+  - \usepackage{caption}
+  - \usepackage{longtable}
+  - \usepackage{float}
+  - \usepackage{booktabs}
+  - \usepackage{makecell}
+  - \usepackage{setspace}
+params:
+  file_resource: ""
+  file_vol: ""
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(width=50)
+options(digits = 3)
+if(!require(tidyverse)) install.packages("tidyverse",
+    repos = "http://cran.us.r-project.org")
+if(!require(kableExtra)) install.packages("kableExtra",
+    repos = "http://cran.us.r-project.org")
+if(!require(gridExtra)) install.packages("gridExtra",
+    repos = "http://cran.us.r-project.org")
+
+library("tidyverse")
+library("kableExtra")
+library("gridExtra")
+```
+
+```{r files, include=FALSE}
+#resource_survey <- as_tibble(params$file_resource)
+#VolTable <- as_tibble(params$file_vol)
+
+resource_survey <- as_tibble(read.csv("ResourceSurvey.csv", header = TRUE))
+VolTable <- as_tibble(read.csv("VolTable.csv", header = TRUE, check.names = FALSE))
+```
+
+```{r remove NA, include=FALSE}
+# Select important columns
+resource_survey_subset <- resource_survey[, c("Grid", "Range", "Comp", "Status", "Latitude", "Longitude", "Slope", "Species", "Girth")]
+
+# Remove rows with NA in important columns
+resource_survey <- resource_survey[complete.cases(resource_survey_subset), ]
+```
+
+
+```{r volume and ivi calculations, include=FALSE}
+num_grid <- length(unique(resource_survey$Grid))
+
+resource_survey_girthclass <- resource_survey %>%
+  mutate(GirthClass = ifelse(Girth < 20, "10-20", ifelse(Girth < 30, "20-30", ifelse(Girth < 40, "30-40", ifelse(Girth < 60, "40-60", ifelse(Girth < 80, "60-80", ifelse(Girth < 100, "80-100", ifelse(Girth < 120, "100-120", ifelse(Girth < 150, "120-150", ifelse(Girth < 180, "150-180", "180+"))))))))))
+
+resource_survey_girthclass$GirthClass <- factor(resource_survey_girthclass$GirthClass, levels = c("10-20", "20-30", "30-40", "40-60", "60-80", "80-100", "100-120", "120-150", "150-180", "180+"))
+
+resource_survey_basal_area <- resource_survey_girthclass %>% mutate(BasalArea = pi * (Girth / 100 / 2 / pi) ^ 2)
+
+### IVI calculations
+ivi_values <- resource_survey_basal_area %>% filter(!is.na(Species)) %>% filter(Species != "") %>% group_by(Species) %>% summarise(num_indiv = sum(Grid > 0), num_grids = length(unique(Grid)), sum_ba = sum(BasalArea))
+
+total_indiv <- sum(ivi_values$num_indiv)
+total_grids <- num_grid
+total_ba <- sum(ivi_values$sum_ba, na.rm = T)
+
+ivi_table <- ivi_values %>% mutate(freq = num_grids / total_grids * 100, rel_freq = freq / sum(freq) * 100, density = num_indiv / (total_grids * 0.1), rel_density = density / sum(density) * 100, rel_ba = sum_ba / total_ba * 100, ivi = rel_freq + rel_density + rel_ba)
+
+### End of IVI calculations
+
+resource_survey_wc <- resource_survey_basal_area %>% mutate(Suggested_WC = ifelse(Slope == "> 40", "Protection Working Circle: High slope", ifelse(Density %in% c("Van Vihin", "Blank"), "Plantation / Grassland: Very low density", ifelse(Density %in% c("High Dense", "Middle Dense"), ifelse(Site_quality %in% c("I", "IA", "IB", "II", "IIA", "IIB", "III", "IIIA", "IIIB", "IV", "IVA"), "SCI: Good density and site quality >= IVA", "IFS: Good density but site quality <= IVB"), "RDF: low density, but not blank or high sloping"))))
+
+resource_survey_volume <- resource_survey_wc %>% mutate(Volume = 
+    case_when(Species == "Teak" ~ case_when(Site_quality == "II" ~ case_when(Girth < 30 ~ 0.025,
+                                                                             Girth < 40 ~ 0.0875,
+                                                                             Girth < 60 ~ 0.1125,
+                                                                             Girth < 80 ~ 0.2500,
+                                                                             Girth < 100 ~ 0.5000,
+                                                                             Girth < 120 ~ 0.8000,
+                                                                             Girth < 150 ~ 1.0750,
+                                                                             Girth < 180 ~ 1.4500,
+                                                                             Girth >= 180 ~ 2.0000),
+                                            Site_quality == "III" ~ case_when(Girth < 30 ~ 0.0200,
+                                                                              Girth < 40 ~ 0.0750,
+                                                                              Girth < 60 ~ 0.1000,
+                                                                              Girth < 80 ~ 0.2250,
+                                                                              Girth < 100 ~ 0.4375,
+                                                                              Girth < 120 ~ 0.6625,
+                                                                              Girth < 150 ~ 0.9250,
+                                                                              Girth < 180 ~ 1.2250,
+                                                                              Girth >= 180 ~ 1.6500),
+                                            Site_quality == "IVA" ~ case_when(Girth < 30 ~ 0.0175,
+                                                                              Girth < 40 ~ 0.0625,
+                                                                              Girth < 60 ~ 0.0875,
+                                                                              Girth < 80 ~ 0.2000,
+                                                                              Girth < 100 ~ 0.3500,
+                                                                              Girth < 120 ~ 0.5500,
+                                                                              Girth < 150 ~ 0.7750,
+                                                                              Girth < 180 ~ 1.0250,
+                                                                              Girth >= 180 ~ 1.3750),
+                                            Site_quality == "IVB" ~ case_when(Girth < 30 ~ 0.0150,
+                                                                              Girth < 40 ~ 0.0500,
+                                                                              Girth < 60 ~ 0.0750,
+                                                                              Girth < 80 ~ 0.1625,
+                                                                              Girth < 100 ~ 0.3000,
+                                                                              Girth < 120 ~ 0.4375,
+                                                                              Girth < 150 ~ 0.6000,
+                                                                              Girth < 180 ~ 0.8375,
+                                                                              Girth >= 180 ~ 1.1000),
+                                            Site_quality == "VA" ~ case_when(Girth < 30 ~ 0.0125,
+                                                                             Girth < 40 ~ 0.0375,
+                                                                             Girth < 60 ~ 0.0625,
+                                                                             Girth < 80 ~ 0.1500,
+                                                                             Girth < 100 ~ 0.2500,
+                                                                             Girth < 120 ~ 0.3750,
+                                                                             Girth < 150 ~ 0.5125,
+                                                                             Girth < 180 ~ 0.7250,
+                                                                             Girth >= 180 ~ 1.0000),
+                                            Site_quality == "VB" ~ case_when(Girth < 30 ~ 0.0125,
+                                                                             Girth < 40 ~ 0.0375,
+                                                                             Girth < 60 ~ 0.0625,
+                                                                             Girth < 80 ~ 0.1500,
+                                                                             Girth < 100 ~ 0.2500,
+                                                                             Girth < 120 ~ 0.3750,
+                                                                             Girth < 150 ~ 0.5125,
+                                                                             Girth < 180 ~ 0.7250,
+                                                                             Girth >= 180 ~ 1.0000)),
+              Species == "Sal" ~ case_when(Site_quality == "II" ~ case_when(Girth < 30 ~ 0.025,
+                                                                            Girth < 40 ~ 0.0875,
+                                                                            Girth < 60 ~ 0.1125,
+                                                                            Girth < 80 ~ 0.2500,
+                                                                            Girth < 100 ~ 0.5000,
+                                                                            Girth < 120 ~ 0.8000,
+                                                                            Girth < 150 ~ 1.0750,
+                                                                            Girth < 180 ~ 1.4500,
+                                                                            Girth >= 180 ~ 2.0000),
+                                            Site_quality == "III" ~ case_when(Girth < 30 ~ 0.0200,
+                                                                              Girth < 40 ~ 0.0750,
+                                                                              Girth < 60 ~ 0.1000,
+                                                                              Girth < 80 ~ 0.2250,
+                                                                              Girth < 100 ~ 0.4375,
+                                                                              Girth < 120 ~ 0.6625,
+                                                                              Girth < 150 ~ 0.9250,
+                                                                              Girth < 180 ~ 1.2250,
+                                                                              Girth >= 180 ~ 1.6500),
+                                            Site_quality == "IVA" ~ case_when(Girth < 30 ~ 0.0175,
+                                                                              Girth < 40 ~ 0.0625,
+                                                                              Girth < 60 ~ 0.0875,
+                                                                              Girth < 80 ~ 0.2000,
+                                                                              Girth < 100 ~ 0.3500,
+                                                                              Girth < 120 ~ 0.5500,
+                                                                              Girth < 150 ~ 0.7750,
+                                                                              Girth < 180 ~ 1.0250,
+                                                                              Girth >= 180 ~ 1.3750),
+                                            Site_quality == "IVB" ~ case_when(Girth < 30 ~ 0.0150,
+                                                                              Girth < 40 ~ 0.0500,
+                                                                              Girth < 60 ~ 0.0750,
+                                                                              Girth < 80 ~ 0.1625,
+                                                                              Girth < 100 ~ 0.3000,
+                                                                              Girth < 120 ~ 0.4375,
+                                                                              Girth < 150 ~ 0.6000,
+                                                                              Girth < 180 ~ 0.8375,
+                                                                              Girth >= 180 ~ 1.1000),
+                                            Site_quality == "VA" ~ case_when(Girth < 30 ~ 0.0125,
+                                                                             Girth < 40 ~ 0.0375,
+                                                                             Girth < 60 ~ 0.0625,
+                                                                             Girth < 80 ~ 0.1500,
+                                                                             Girth < 100 ~ 0.2500,
+                                                                             Girth < 120 ~ 0.3750,
+                                                                             Girth < 150 ~ 0.5125,
+                                                                             Girth < 180 ~ 0.7250,
+                                                                             Girth >= 180 ~ 1.0000),
+                                            Site_quality == "VB" ~ case_when(Girth < 30 ~ 0.0125,
+                                                                             Girth < 40 ~ 0.0375,
+                                                                             Girth < 60 ~ 0.0625,
+                                                                             Girth < 80 ~ 0.1500,
+                                                                             Girth < 100 ~ 0.2500,
+                                                                             Girth < 120 ~ 0.3750,
+                                                                             Girth < 150 ~ 0.5125,
+                                                                             Girth < 180 ~ 0.7250,
+                                                                             Girth >= 180 ~ 1.0000)),
+              TRUE ~ case_when(Site_quality == "II" ~ case_when(Girth < 30 ~ 0.025,
+                                                                Girth < 40 ~ 0.0875,
+                                                                Girth < 60 ~ 0.1125,
+                                                                Girth < 80 ~ 0.2500,
+                                                                Girth < 100 ~ 0.5000,
+                                                                Girth < 120 ~ 0.8000,
+                                                                Girth < 150 ~ 1.0750,
+                                                                Girth < 180 ~ 1.4500,
+                                                                Girth >= 180 ~ 2.0000),
+                                            Site_quality == "III" ~ case_when(Girth < 30 ~ 0.0200,
+                                                                              Girth < 40 ~ 0.0750,
+                                                                              Girth < 60 ~ 0.1000,
+                                                                              Girth < 80 ~ 0.2250,
+                                                                              Girth < 100 ~ 0.4375,
+                                                                              Girth < 120 ~ 0.6625,
+                                                                              Girth < 150 ~ 0.9250,
+                                                                              Girth < 180 ~ 1.2250,
+                                                                              Girth >= 180 ~ 1.6500),
+                                            Site_quality == "IVA" ~ case_when(Girth < 30 ~ 0.0175,
+                                                                              Girth < 40 ~ 0.0625,
+                                                                              Girth < 60 ~ 0.0875,
+                                                                              Girth < 80 ~ 0.2000,
+                                                                              Girth < 100 ~ 0.3500,
+                                                                              Girth < 120 ~ 0.5500,
+                                                                              Girth < 150 ~ 0.7750,
+                                                                              Girth < 180 ~ 1.0250,
+                                                                              Girth >= 180 ~ 1.3750),
+                                            Site_quality == "IVB" ~ case_when(Girth < 30 ~ 0.0150,
+                                                                              Girth < 40 ~ 0.0500,
+                                                                              Girth < 60 ~ 0.0750,
+                                                                              Girth < 80 ~ 0.1625,
+                                                                              Girth < 100 ~ 0.3000,
+                                                                              Girth < 120 ~ 0.4375,
+                                                                              Girth < 150 ~ 0.6000,
+                                                                              Girth < 180 ~ 0.8375,
+                                                                              Girth >= 180 ~ 1.1000),
+                                            Site_quality == "VA" ~ case_when(Girth < 30 ~ 0.0125,
+                                                                             Girth < 40 ~ 0.0375,
+                                                                             Girth < 60 ~ 0.0625,
+                                                                             Girth < 80 ~ 0.1500,
+                                                                             Girth < 100 ~ 0.2500,
+                                                                             Girth < 120 ~ 0.3750,
+                                                                             Girth < 150 ~ 0.5125,
+                                                                             Girth < 180 ~ 0.7250,
+                                                                             Girth >= 180 ~ 1.0000),
+                                            Site_quality == "VB" ~ case_when(Girth < 30 ~ 0.0125,
+                                                                             Girth < 40 ~ 0.0375,
+                                                                             Girth < 60 ~ 0.0625,
+                                                                             Girth < 80 ~ 0.1500,
+                                                                             Girth < 100 ~ 0.2500,
+                                                                             Girth < 120 ~ 0.3750,
+                                                                             Girth < 150 ~ 0.5125,
+                                                                             Girth < 180 ~ 0.7250,
+                                                                             Girth >= 180 ~ 1.0000))))
+
+```
+\pagenumbering{gobble}
+\pagebreak \cleardoublepage 
+\pagenumbering{roman}
+\doublespacing
+\tableofcontents
+\newpage
+\addtocontents{toc}{\vspace{2cm}}
+\pagebreak \cleardoublepage 
+\singlespacing
+\pagenumbering{arabic}
+
+## 1. Grid-wise tree number and volume (cum) in sample plots
+
+```{r section 1, echo=FALSE, message=FALSE, warning=FALSE}
+resource_survey_volume %>%
+  group_by(Grid) %>%
+  summarise(Range = Range[1], "Comp. number" = Comp[1], Status = Status[1],
+            Latitude = Latitude[1], Longitude = Longitude[1],
+            "Slope (degrees)" = Slope[1], "Forest type" = Forest_type[1],
+            "Site Quality" = Site_quality[1], Density = Density[1],
+            "Age class" = Age_class[1],
+            "No. of species" = length(unique(Species)),
+            "No. of trees" = n(),
+            "Volume (cum)" = sum(Volume)) %>%
+  kbl(caption = "Grid-wise tree number and volume (cum) in sample plots", longtable = TRUE, booktabs = TRUE) %>%
+  kable_styling(latex_options = "repeat_header")
+```
+
+\pagebreak \cleardoublepage 
+
+## 2. Volume table (cum)
+
+```{r volume table, echo=FALSE, message=FALSE, warning=FALSE}
+VolTable %>%
+  kbl(caption = "Volume table (cum)", longtable = TRUE, booktabs = TRUE) %>%
+  kable_styling(latex_options = "repeat_header") %>%
+  column_spec(1:12, width = "2cm")
+```
+
+\pagebreak \cleardoublepage 
+
+## 3. Grid-wise, girth (cm)-wise distribution of individuals for grids with 30 or more trees
+
+```{r nd curve, echo=FALSE, message=FALSE, warning=FALSE, results='asis', fig.width=6, fig.height=6}
+grid_name <- sort(unique(resource_survey_volume$Grid))
+for(i in 1:length(grid_name)){
+  treenum <- resource_survey_volume %>%
+    filter(Grid == grid_name[i]) %>%
+    summarise(treenum = n()) %>%
+    .$treenum
+  if(treenum >= 30){
+p <- resource_survey_volume %>%
+  filter(Grid == grid_name[i]) %>%
+  filter(!is.na(Girth)) %>%
+  #summarise(girth = Girth) %>%
+  ggplot(aes(Girth)) +
+  geom_histogram(color="black", fill="white", breaks=c(0,20,40,60,90,120,150,180)) +
+  geom_freqpoly(color="black", 
+      breaks=c(0,20,40,60,90,120,150,180)) +
+  theme_classic() + xlab("Girth (cm)") +
+  ylab("Number of trees in 0.1 Ha") +
+  ggtitle(paste0("Girth - Number curve for grid ", grid_name[i]))
+  
+ggsave(p,filename=paste("p-",i,".png",sep=""))
+q <- resource_survey_volume %>%
+  filter(Grid == grid_name[i]) %>%
+  #summarise(girth = Girth) %>%
+  ggplot(aes(Girth)) + geom_density() +
+  theme_classic() + xlab("Girth (cm)") +
+  ylab("Number Density Estimate") +
+  ggtitle(paste0("Girth - Density curve for grid ", grid_name[i]))
+ggsave(q,filename=paste("q-",i,".png",sep=""))
+}
+}
+```
+
+```{r nd curve 2, echo=FALSE, message=FALSE, warning=FALSE, results='asis', fig.width=6, fig.height=6}
+for(i in 1:length(grid_name)){
+  treenum <- resource_survey_volume %>%
+    filter(Grid == grid_name[i]) %>%
+    summarise(treenum = n()) %>%
+    .$treenum
+  if(treenum >= 30){
+#cat("\n\n\n\n\n\\vspace{2cm} \n")
+#print(p, out.width='40%')
+#print(q, out.width='40%')
+cat(paste0("![](", "p-", i, ".png){width=50%}"))
+cat(paste0("![](", "q-", i, ".png){width=50%}"), "\n")
+cat("\n\\pagebreak\n")
+}
+}
+gc()
+```
+
+\pagebreak \cleardoublepage
+
+## 4. Grid-wise tree number as per girth class (cm)
+
+```{r section 4, echo=FALSE, message=FALSE, warning=FALSE}
+resource_survey_volume %>%
+  group_by(Grid) %>%
+  summarise(Range = Range[1], "Comp. number" = Comp[1], Status = Status[1], 
+#            Latitude = Latitude[1], Longitude = Longitude[1], "Slope (degrees)" = Slope[1], 
+            "Forest type" = Forest_type[1],
+            "Site Quality" = Site_quality[1], Density = Density[1],
+            "Age class" = Age_class[1], 
+            #"No. of species" = length(unique(Species)),
+            #"No. of trees" = n(), 
+            #"Volume (cum)" = sum(Volume)) 
+            "10-20" = sum(Girth < 20),
+            "20-30" = sum(Girth >= 20 & Girth < 30),
+            "30-40" = sum(Girth >= 30 & Girth < 40),
+            "40-60" = sum(Girth >= 40 & Girth < 60),
+            "60-80" = sum(Girth >= 60 & Girth < 80),
+            "80-100" = sum(Girth >= 80 & Girth < 100),
+            "100-120" = sum(Girth >= 100 & Girth < 120),
+            "120-150" = sum(Girth >= 120 & Girth < 150),
+            "150-180" = sum(Girth >= 150 & Girth < 180),
+            "180-" = sum(Girth >= 180),
+            Sum = sum(Girth >= 0)
+            )%>%
+  kbl(caption = "Grid-wise tree number as per girth class (cm)", longtable = TRUE, booktabs = TRUE) %>%
+  #  add_header_above(c("" = 8, "Girth class (cm)" = 10, "" = 1)) %>% 
+  kable_styling(latex_options = "repeat_header", full_width = F) %>%
+  column_spec(3:6, width = "1cm")
+```
+
+\pagebreak \cleardoublepage 
+
+## 5. Grid-wise timber basal area (square metre) as per girth class (cm)
+
+```{r section 5, echo=FALSE, message=FALSE, warning=FALSE}
+resource_survey_volume %>% group_by(Grid, GirthClass) %>%
+  summarise(Range = Range[1], "Comp. number" = Comp[1], Status = Status[1], 
+#            Latitude = Latitude[1], Longitude = Longitude[1], "Slope (degrees)" = Slope[1], 
+            "Forest type" = Forest_type[1],
+            "Site Quality" = Site_quality[1], Density = Density[1],
+            "Age class" = Age_class[1], ba = sum(BasalArea)) %>%
+  na.omit() %>%
+  pivot_wider(names_from = GirthClass, values_from = ba) %>%
+  #arrange(Grid) %>%
+  kbl(caption = "Grid-wise timber basal area (square metre) as per girth class (cm)", longtable = TRUE, booktabs = TRUE) %>%
+  #  add_header_above(c("" = 8, "Girth class (cm)" = 10, "" = 1)) %>% 
+  kable_styling(latex_options = "repeat_header", full_width = F) %>%
+  column_spec(3:6, width = "1cm")
+```
+
+\pagebreak \cleardoublepage 
+
+## 6. Grid-wise timber volume (cum) as per girth class (cm)
+
+```{r section 6, echo=FALSE, message=FALSE, warning=FALSE}
+resource_survey_volume %>% group_by(Grid, GirthClass) %>%
+  summarise(Range = Range[1], "Comp. number" = Comp[1], Status = Status[1], 
+#            Latitude = Latitude[1], Longitude = Longitude[1], "Slope (degrees)" = Slope[1], 
+            "Forest type" = Forest_type[1],
+            "Site Quality" = Site_quality[1], Density = Density[1],
+            "Age class" = Age_class[1], vol = sum(Volume)) %>%
+  na.omit() %>%
+  pivot_wider(names_from = GirthClass, values_from = vol) %>%
+  kbl(caption = "Grid-wise timber volume (cum) as per girth class (cm)", longtable = TRUE, booktabs = TRUE) %>%
+  #  add_header_above(c("" = 8, "Girth class (cm)" = 10, "" = 1)) %>% 
+  kable_styling(latex_options = "repeat_header", full_width = F) %>%
+  column_spec(3:6, width = "1cm")
+```
+
+\pagebreak \cleardoublepage 
+
+
+
+
+
+
+
+
+## 7. Species-wise and girth class (cm)-wise per hectare average tree number
+
+```{r section 7, echo=FALSE, message=FALSE, warning=FALSE}
+resource_survey_volume %>% group_by(GirthClass, Species) %>%
+  summarise(n = n() / num_grid * 10) %>%
+  na.omit() %>%
+  arrange(GirthClass) %>%
+  pivot_wider(names_from = GirthClass, values_from = n) %>%
+  arrange(Species) %>%
+  kbl(caption = "Species-wise and girth class (cm)-wise per hectare average tree number", longtable = TRUE, booktabs = TRUE) %>%
+  #  add_header_above(c("" = 1, "Girth class (cm)" = 10)) %>% 
+  kable_styling(latex_options = "repeat_header", full_width = F) 
+```
+
+\pagebreak \cleardoublepage 
+
+## 8. Species-wise and girth class (cm)-wise per hectare average basal area (sq m)
+
+```{r section 8, echo=FALSE, message=FALSE, warning=FALSE}
+resource_survey_volume %>% group_by(GirthClass, Species) %>%
+  summarise(ba = sum(BasalArea) / num_grid * 10) %>%
+  na.omit() %>%
+  arrange(GirthClass) %>%
+  pivot_wider(names_from = GirthClass, values_from = ba) %>%
+  kbl(caption = "Species-wise and girth class (cm)-wise per hectare average basal area (sq m)", longtable = TRUE, booktabs = TRUE) %>%
+  #  add_header_above(c("" = 1, "Girth class (cm)" = 10)) %>% 
+  kable_styling(latex_options = "repeat_header", full_width = F) 
+```
+
+\pagebreak \cleardoublepage
+
+## 9. Species-wise and girth class (cm)-wise per hectare average tree volume (cum)
+
+```{r section 9, echo=FALSE, message=FALSE, warning=FALSE}
+resource_survey_volume %>% group_by(GirthClass, Species) %>%
+  summarise(vol = sum(Volume) / num_grid * 10) %>%
+  na.omit() %>%
+  arrange(GirthClass) %>%
+  pivot_wider(names_from = GirthClass, values_from = vol) %>%
+  kbl(caption = "Species-wise and girth class (cm)-wise per hectare average tree volume (cum)", longtable = TRUE, booktabs = TRUE) %>%
+  #  add_header_above(c("" = 1, "Girth class (cm)" = 10)) %>% 
+  kable_styling(latex_options = "repeat_header", full_width = F) 
+```
+
+\pagebreak \cleardoublepage
+
+
+
+
+
+
+## 10. Range-wise, species-wise and girth class (cm)-wise per hectare average tree number
+
+```{r section 10, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+range_name <- sort(unique(resource_survey_volume$Range))
+for(i in 1:length(range_name)){
+num_grid <- resource_survey_volume %>%
+  filter(Range == range_name[i]) %>%
+  summarise(grid = length(unique(Grid))) %>%
+  .$grid
+p <- resource_survey_volume %>%
+  filter(Range == range_name[i]) %>%
+  group_by(GirthClass, Species) %>%
+  summarise(n = n() / num_grid * 10) %>%
+  na.omit() %>%
+  arrange(GirthClass) %>%
+  pivot_wider(names_from = GirthClass, values_from = n) %>%
+  arrange(Species) %>%
+  kbl(caption = range_name[i], longtable = TRUE, booktabs = TRUE) %>%
+  #  add_header_above(c("" = 1, "Girth class (cm)" = 10)) %>% 
+  kable_styling(latex_options = "repeat_header", full_width = F)
+print(p)
+}
+```
+
+\pagebreak \cleardoublepage 
+
+## 11. Range-wise, species-wise and girth class (cm)-wise per hectare average basal area (sq m)
+
+```{r section 11, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+range_name <- sort(unique(resource_survey_volume$Range))
+for(i in 1:length(range_name)){
+num_grid <- resource_survey_volume %>%
+  filter(Range == range_name[i]) %>%
+  summarise(grid = length(unique(Grid))) %>%
+  .$grid
+p <- resource_survey_volume %>%
+  filter(Range == range_name[i]) %>%
+  group_by(GirthClass, Species) %>%
+  summarise(ba = sum(BasalArea) / num_grid * 10) %>%
+  na.omit() %>%
+  arrange(GirthClass) %>%
+  pivot_wider(names_from = GirthClass, values_from = ba) %>%
+  arrange(Species) %>%
+  kbl(caption = range_name[i], longtable = TRUE, booktabs = TRUE) %>%
+  #  add_header_above(c("" = 1, "Girth class (cm)" = 10)) %>% 
+  kable_styling(latex_options = "repeat_header", full_width = F)
+print(p)
+}
+```
+
+\pagebreak \cleardoublepage 
+
+## 12. Range-wise, species-wise and girth class (cm)-wise per hectare average tree volume (cum)
+
+```{r section 12, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+range_name <- sort(unique(resource_survey_volume$Range))
+for(i in 1:length(range_name)){
+num_grid <- resource_survey_volume %>%
+  filter(Range == range_name[i]) %>%
+  summarise(grid = length(unique(Grid))) %>%
+  .$grid
+p <- resource_survey_volume %>%
+  filter(Range == range_name[i]) %>%
+  group_by(GirthClass, Species) %>%
+  summarise(vol = sum(Volume) / num_grid * 10) %>%
+  na.omit() %>%
+  arrange(GirthClass) %>%
+  pivot_wider(names_from = GirthClass, values_from = vol) %>%
+  arrange(Species) %>%
+  kbl(caption = range_name[i], longtable = TRUE, booktabs = TRUE) %>%
+  #  add_header_above(c("" = 1, "Girth class (cm)" = 10)) %>% 
+  kable_styling(latex_options = "repeat_header", full_width = F)
+print(p)
+}
+```
+
+\pagebreak \cleardoublepage 
+
+## 13. Number of compartments considered in each range
+
+```{r section 13, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+resource_survey_volume %>%
+  group_by(Range) %>%
+  summarise("Number of compartments considered" = length(unique(Comp))) %>%
+  kbl(caption = "Number of compartments considered in each range", longtable = TRUE, booktabs = TRUE) %>%
+  kable_styling(latex_options = "repeat_header", full_width = F)
+```
+
+\pagebreak \cleardoublepage
+
+## 14. Number of grids considered in each range
+
+```{r section 14, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+resource_survey_volume %>%
+  group_by(Range) %>%
+  summarise("Number of grids considered" = length(unique(Grid))) %>%
+  kbl(caption = "Number of grids considered in each range", longtable = TRUE, booktabs = TRUE) %>%
+  kable_styling(latex_options = "repeat_header", full_width = F)
+```
+
+\pagebreak \cleardoublepage
+
+## 15. Site quality-wise, species-wise and girth class (cm)-wise per hectare average tree number
+
+```{r section 15, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+site_name <- sort(unique(resource_survey_volume$Site_quality))
+for(i in 1:length(site_name)){
+num_grid <- resource_survey_volume %>%
+  filter(Site_quality == site_name[i]) %>%
+  summarise(grid = length(unique(Grid))) %>%
+  .$grid
+p <- resource_survey_volume %>%
+  filter(Site_quality == site_name[i]) %>%
+  group_by(GirthClass, Species) %>%
+  summarise(n = n() / num_grid * 10) %>%
+  na.omit() %>%
+  arrange(GirthClass) %>%
+  pivot_wider(names_from = GirthClass, values_from = n) %>%
+  arrange(Species) %>%
+  kbl(caption = site_name[i], longtable = TRUE, booktabs = TRUE) %>%
+  #  add_header_above(c("" = 1, "Girth class (cm)" = 10)) %>% 
+  kable_styling(latex_options = "repeat_header", full_width = F)
+print(p)
+}
+```
+
+\pagebreak \cleardoublepage 
+
+## 16. Site quality-wise, species-wise and girth class (cm)-wise per hectare average basal area (sq m)
+
+```{r section 16, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+site_name <- sort(unique(resource_survey_volume$Site_quality))
+for(i in 1:length(site_name)){
+num_grid <- resource_survey_volume %>%
+  filter(Site_quality == site_name[i]) %>%
+  summarise(grid = length(unique(Grid))) %>%
+  .$grid
+p <- resource_survey_volume %>%
+  filter(Site_quality == site_name[i]) %>%
+  group_by(GirthClass, Species) %>%
+  summarise(ba = sum(BasalArea) / num_grid * 10) %>%
+  na.omit() %>%
+  arrange(GirthClass) %>%
+  pivot_wider(names_from = GirthClass, values_from = ba) %>%
+  arrange(Species) %>%
+  kbl(caption = site_name[i], longtable = TRUE, booktabs = TRUE) %>%
+  #  add_header_above(c("" = 1, "Girth class (cm)" = 10)) %>% 
+  kable_styling(latex_options = "repeat_header", full_width = F)
+print(p)
+}
+```
+
+\pagebreak \cleardoublepage 
+
+## 17. Site quality-wise, species-wise and girth class (cm)-wise per hectare average tree volume (cum)
+
+```{r section 17, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+site_name <- sort(unique(resource_survey_volume$Site_quality))
+for(i in 1:length(site_name)){
+num_grid <- resource_survey_volume %>%
+  filter(Site_quality == site_name[i]) %>%
+  summarise(grid = length(unique(Grid))) %>%
+  .$grid
+p <- resource_survey_volume %>%
+  filter(Site_quality == site_name[i]) %>%
+  group_by(GirthClass, Species) %>%
+  summarise(vol = sum(Volume) / num_grid * 10) %>%
+  na.omit() %>%
+  arrange(GirthClass) %>%
+  pivot_wider(names_from = GirthClass, values_from = vol) %>%
+  arrange(Species) %>%
+  kbl(caption = site_name[i], longtable = TRUE, booktabs = TRUE) %>%
+  #  add_header_above(c("" = 1, "Girth class (cm)" = 10)) %>% 
+  kable_styling(latex_options = "repeat_header", full_width = F)
+print(p)
+}
+```
+
+\pagebreak \cleardoublepage 
+
+## 18. Age class-wise, species-wise and girth class (cm)-wise per hectare average tree number
+
+```{r section 18, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+age_name <- sort(unique(resource_survey_volume$Age_class))
+for(i in 1:length(age_name)){
+num_grid <- resource_survey_volume %>%
+  filter(Age_class == age_name[i]) %>%
+  summarise(grid = length(unique(Grid))) %>%
+  .$grid
+p <- resource_survey_volume %>%
+  filter(Age_class == age_name[i]) %>%
+  group_by(GirthClass, Species) %>%
+  summarise(n = n() / num_grid * 10) %>%
+  na.omit() %>%
+  arrange(GirthClass) %>%
+  pivot_wider(names_from = GirthClass, values_from = n) %>%
+  arrange(Species) %>%
+  kbl(caption = age_name[i], longtable = TRUE, booktabs = TRUE) %>%
+  #  add_header_above(c("" = 1, "Girth class (cm)" = 10)) %>% 
+  kable_styling(latex_options = "repeat_header", full_width = F)
+print(p)
+}
+```
+
+\pagebreak \cleardoublepage 
+
+## 19. Age class-wise, species-wise and girth class (cm)-wise per hectare average basal area (sq m)
+
+```{r section 19, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+age_name <- sort(unique(resource_survey_volume$Age_class))
+for(i in 1:length(age_name)){
+num_grid <- resource_survey_volume %>%
+  filter(Age_class == age_name[i]) %>%
+  summarise(grid = length(unique(Grid))) %>%
+  .$grid
+p <- resource_survey_volume %>%
+  filter(Age_class == age_name[i]) %>%
+  group_by(GirthClass, Species) %>%
+  summarise(ba = sum(BasalArea) / num_grid * 10) %>%
+  na.omit() %>%
+  arrange(GirthClass) %>%
+  pivot_wider(names_from = GirthClass, values_from = ba) %>%
+  arrange(Species) %>%
+  kbl(caption = age_name[i], longtable = TRUE, booktabs = TRUE) %>%
+  #  add_header_above(c("" = 1, "Girth class (cm)" = 10)) %>% 
+  kable_styling(latex_options = "repeat_header", full_width = F)
+print(p)
+}
+```
+
+\pagebreak \cleardoublepage 
+
+## 20. Age class-wise, species-wise and girth class (cm)-wise per hectare average tree volume (cum)
+
+```{r section 20, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+age_name <- sort(unique(resource_survey_volume$Age_class))
+for(i in 1:length(age_name)){
+num_grid <- resource_survey_volume %>%
+  filter(Age_class == age_name[i]) %>%
+  summarise(grid = length(unique(Grid))) %>%
+  .$grid
+p <- resource_survey_volume %>%
+  filter(Age_class == age_name[i]) %>%
+  group_by(GirthClass, Species) %>%
+  summarise(vol = sum(Volume) / num_grid * 10) %>%
+  na.omit() %>%
+  arrange(GirthClass) %>%
+  pivot_wider(names_from = GirthClass, values_from = vol) %>%
+  arrange(Species) %>%
+  kbl(caption = age_name[i], longtable = TRUE, booktabs = TRUE) %>%
+  #  add_header_above(c("" = 1, "Girth class (cm)" = 10)) %>% 
+  kable_styling(latex_options = "repeat_header", full_width = F)
+print(p)
+}
+```
+
+\pagebreak \cleardoublepage 
+
+## 21. Density-wise, species-wise and girth class (cm)-wise per hectare average tree number
+
+```{r section 21, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+density_name <- sort(unique(resource_survey_volume$Density))
+for(i in 1:length(density_name)){
+num_grid <- resource_survey_volume %>%
+  filter(Density == density_name[i]) %>%
+  summarise(grid = length(unique(Grid))) %>%
+  .$grid
+p <- resource_survey_volume %>%
+  filter(Density == density_name[i]) %>%
+  group_by(GirthClass, Species) %>%
+  summarise(n = n() / num_grid * 10) %>%
+  na.omit() %>%
+  arrange(GirthClass) %>%
+  pivot_wider(names_from = GirthClass, values_from = n) %>%
+  arrange(Species) %>%
+  kbl(caption = density_name[i], longtable = TRUE, booktabs = TRUE) %>%
+  #  add_header_above(c("" = 1, "Girth class (cm)" = 10)) %>% 
+  kable_styling(latex_options = "repeat_header", full_width = F)
+print(p)
+}
+```
+
+\pagebreak \cleardoublepage 
+
+## 22. Density-wise, species-wise and girth class (cm)-wise per hectare average basal area (sq m)
+
+```{r section 22, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+density_name <- sort(unique(resource_survey_volume$Density))
+for(i in 1:length(density_name)){
+num_grid <- resource_survey_volume %>%
+  filter(Density == density_name[i]) %>%
+  summarise(grid = length(unique(Grid))) %>%
+  .$grid
+p <- resource_survey_volume %>%
+  filter(Density == density_name[i]) %>%
+  group_by(GirthClass, Species) %>%
+  summarise(ba = sum(BasalArea) / num_grid * 10) %>%
+  na.omit() %>%
+  arrange(GirthClass) %>%
+  pivot_wider(names_from = GirthClass, values_from = ba) %>%
+  arrange(Species) %>%
+  kbl(caption = density_name[i], longtable = TRUE, booktabs = TRUE) %>%
+  #  add_header_above(c("" = 1, "Girth class (cm)" = 10)) %>% 
+  kable_styling(latex_options = "repeat_header", full_width = F)
+print(p)
+}
+```
+
+\pagebreak \cleardoublepage 
+
+## 23. Density-wise, species-wise and girth class (cm)-wise per hectare average tree volume (cum)
+
+```{r section 23, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+density_name <- sort(unique(resource_survey_volume$Density))
+for(i in 1:length(density_name)){
+num_grid <- resource_survey_volume %>%
+  filter(Density == density_name[i]) %>%
+  summarise(grid = length(unique(Grid))) %>%
+  .$grid
+p <- resource_survey_volume %>%
+  filter(Density == density_name[i]) %>%
+  group_by(GirthClass, Species) %>%
+  summarise(vol = sum(Volume) / num_grid * 10) %>%
+  na.omit() %>%
+  arrange(GirthClass) %>%
+  pivot_wider(names_from = GirthClass, values_from = vol) %>%
+  arrange(Species) %>%
+  kbl(caption = density_name[i], longtable = TRUE, booktabs = TRUE) %>%
+  #  add_header_above(c("" = 1, "Girth class (cm)" = 10)) %>% 
+  kable_styling(latex_options = "repeat_header", full_width = F)
+print(p)
+}
+```
+
+\pagebreak \cleardoublepage 
+
+## 24. Forest type-wise, species-wise and girth class (cm)-wise per hectare average tree number
+
+```{r section 24, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+forest_name <- sort(unique(resource_survey_volume$Forest_type))
+for(i in 1:length(forest_name)){
+num_grid <- resource_survey_volume %>%
+  filter(Forest_type == forest_name[i]) %>%
+  summarise(grid = length(unique(Grid))) %>%
+  .$grid
+p <- resource_survey_volume %>%
+  filter(Forest_type == forest_name[i]) %>%
+  group_by(GirthClass, Species) %>%
+  summarise(n = n() / num_grid * 10) %>%
+  na.omit() %>%
+  arrange(GirthClass) %>%
+  pivot_wider(names_from = GirthClass, values_from = n) %>%
+  arrange(Species) %>%
+  kbl(caption = forest_name[i], longtable = TRUE, booktabs = TRUE) %>%
+  #  add_header_above(c("" = 1, "Girth class (cm)" = 10)) %>% 
+  kable_styling(latex_options = "repeat_header", full_width = F)
+print(p)
+}
+```
+
+\pagebreak \cleardoublepage 
+
+## 25. Forest type-wise, species-wise and girth class (cm)-wise per hectare average basal area (sq m)
+
+```{r section 25, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+forest_name <- sort(unique(resource_survey_volume$Forest_type))
+for(i in 1:length(forest_name)){
+num_grid <- resource_survey_volume %>%
+  filter(Forest_type == forest_name[i]) %>%
+  summarise(grid = length(unique(Grid))) %>%
+  .$grid
+p <- resource_survey_volume %>%
+  filter(Forest_type == forest_name[i]) %>%
+  group_by(GirthClass, Species) %>%
+  summarise(ba = sum(BasalArea) / num_grid * 10) %>%
+  na.omit() %>%
+  arrange(GirthClass) %>%
+  pivot_wider(names_from = GirthClass, values_from = ba) %>%
+  arrange(Species) %>%
+  kbl(caption = forest_name[i], longtable = TRUE, booktabs = TRUE) %>%
+  #  add_header_above(c("" = 1, "Girth class (cm)" = 10)) %>% 
+  kable_styling(latex_options = "repeat_header", full_width = F)
+print(p)
+}
+```
+
+\pagebreak \cleardoublepage 
+
+## 26. Forest type-wise, species-wise and girth class (cm)-wise per hectare average tree volume (cum)
+
+```{r section 26, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+forest_name <- sort(unique(resource_survey_volume$Forest_type))
+for(i in 1:length(forest_name)){
+num_grid <- resource_survey_volume %>%
+  filter(Forest_type == forest_name[i]) %>%
+  summarise(grid = length(unique(Grid))) %>%
+  .$grid
+p <- resource_survey_volume %>%
+  filter(Forest_type == forest_name[i]) %>%
+  group_by(GirthClass, Species) %>%
+  summarise(vol = sum(Volume) / num_grid * 10) %>%
+  na.omit() %>%
+  arrange(GirthClass) %>%
+  pivot_wider(names_from = GirthClass, values_from = vol) %>%
+  arrange(Species) %>%
+  kbl(caption = forest_name[i], longtable = TRUE, booktabs = TRUE) %>%
+  #  add_header_above(c("" = 1, "Girth class (cm)" = 10)) %>% 
+  kable_styling(latex_options = "repeat_header", full_width = F)
+print(p)
+}
+```
+
+\pagebreak \cleardoublepage 
+
+## 27. Slope (%)-wise, species-wise and girth class (cm)-wise per hectare average tree number
+
+```{r section 27, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+slope_name <- sort(unique(resource_survey_volume$Slope))
+for(i in 1:length(slope_name)){
+num_grid <- resource_survey_volume %>%
+  filter(Slope == slope_name[i]) %>%
+  summarise(grid = length(unique(Grid))) %>%
+  .$grid
+p <- resource_survey_volume %>%
+  filter(Slope == slope_name[i]) %>%
+  group_by(GirthClass, Species) %>%
+  summarise(n = n() / num_grid * 10) %>%
+  na.omit() %>%
+  arrange(GirthClass) %>%
+  pivot_wider(names_from = GirthClass, values_from = n) %>%
+  arrange(Species) %>%
+  kbl(caption = slope_name[i], longtable = TRUE, booktabs = TRUE) %>%
+  #  add_header_above(c("" = 1, "Girth class (cm)" = 10)) %>% 
+  kable_styling(latex_options = "repeat_header", full_width = F)
+print(p)
+}
+```
+
+\pagebreak \cleardoublepage 
+
+## 28. Slope (%)-wise, species-wise and girth class (cm)-wise per hectare average basal area (sq m)
+
+```{r section 28, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+slope_name <- sort(unique(resource_survey_volume$Slope))
+for(i in 1:length(slope_name)){
+num_grid <- resource_survey_volume %>%
+  filter(Slope == slope_name[i]) %>%
+  summarise(grid = length(unique(Grid))) %>%
+  .$grid
+p <- resource_survey_volume %>%
+  filter(Slope == slope_name[i]) %>%
+  group_by(GirthClass, Species) %>%
+  summarise(ba = sum(BasalArea) / num_grid * 10) %>%
+  na.omit() %>%
+  arrange(GirthClass) %>%
+  pivot_wider(names_from = GirthClass, values_from = ba) %>%
+  arrange(Species) %>%
+  kbl(caption = slope_name[i], longtable = TRUE, booktabs = TRUE) %>%
+  #  add_header_above(c("" = 1, "Girth class (cm)" = 10)) %>% 
+  kable_styling(latex_options = "repeat_header", full_width = F)
+print(p)
+}
+```
+
+\pagebreak \cleardoublepage 
+
+## 29. Slope (%)-wise, species-wise and girth class (cm)-wise per hectare average tree volume (cum)
+
+```{r section 29, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+slope_name <- sort(unique(resource_survey_volume$Slope))
+for(i in 1:length(slope_name)){
+num_grid <- resource_survey_volume %>%
+  filter(Slope == slope_name[i]) %>%
+  summarise(grid = length(unique(Grid))) %>%
+  .$grid
+p <- resource_survey_volume %>%
+  filter(Slope == slope_name[i]) %>%
+  group_by(GirthClass, Species) %>%
+  summarise(vol = sum(Volume) / num_grid * 10) %>%
+  na.omit() %>%
+  arrange(GirthClass) %>%
+  pivot_wider(names_from = GirthClass, values_from = vol) %>%
+  arrange(Species) %>%
+  kbl(caption = slope_name[i], longtable = TRUE, booktabs = TRUE) %>%
+  #  add_header_above(c("" = 1, "Girth class (cm)" = 10)) %>% 
+  kable_styling(latex_options = "repeat_header", full_width = F)
+print(p)
+}
+```
+
+\pagebreak \cleardoublepage 
+
+## 30. Status-wise, species-wise and girth class (cm)-wise per hectare average tree number
+
+```{r section 30, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+status_name <- sort(unique(resource_survey_volume$Status))
+for(i in 1:length(status_name)){
+num_grid <- resource_survey_volume %>%
+  filter(Status == status_name[i]) %>%
+  summarise(grid = length(unique(Grid))) %>%
+  .$grid
+p <- resource_survey_volume %>%
+  filter(Status == status_name[i]) %>%
+  group_by(GirthClass, Species) %>%
+  summarise(n = n() / num_grid * 10) %>%
+  na.omit() %>%
+  arrange(GirthClass) %>%
+  pivot_wider(names_from = GirthClass, values_from = n) %>%
+  arrange(Species) %>%
+  kbl(caption = status_name[i], longtable = TRUE, booktabs = TRUE) %>%
+  #  add_header_above(c("" = 1, "Girth class (cm)" = 10)) %>% 
+  kable_styling(latex_options = "repeat_header", full_width = F)
+print(p)
+}
+```
+
+\pagebreak \cleardoublepage 
+
+## 31. Status-wise, species-wise and girth class (cm)-wise per hectare average basal area (sq m)
+
+```{r section 31, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+status_name <- sort(unique(resource_survey_volume$Status))
+for(i in 1:length(status_name)){
+num_grid <- resource_survey_volume %>%
+  filter(Status == status_name[i]) %>%
+  summarise(grid = length(unique(Grid))) %>%
+  .$grid
+p <- resource_survey_volume %>%
+  filter(Status == status_name[i]) %>%
+  group_by(GirthClass, Species) %>%
+  summarise(ba = sum(BasalArea) / num_grid * 10) %>%
+  na.omit() %>%
+  arrange(GirthClass) %>%
+  pivot_wider(names_from = GirthClass, values_from = ba) %>%
+  arrange(Species) %>%
+  kbl(caption = status_name[i], longtable = TRUE, booktabs = TRUE) %>%
+  #  add_header_above(c("" = 1, "Girth class (cm)" = 10)) %>% 
+  kable_styling(latex_options = "repeat_header", full_width = F)
+print(p)
+}
+```
+
+\pagebreak \cleardoublepage 
+
+## 32. Status-wise, species-wise and girth class (cm)-wise per hectare average tree volume (cum)
+
+```{r section 32, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+status_name <- sort(unique(resource_survey_volume$Status))
+for(i in 1:length(status_name)){
+num_grid <- resource_survey_volume %>%
+  filter(Status == status_name[i]) %>%
+  summarise(grid = length(unique(Grid))) %>%
+  .$grid
+p <- resource_survey_volume %>%
+  filter(Status == status_name[i]) %>%
+  group_by(GirthClass, Species) %>%
+  summarise(vol = sum(Volume) / num_grid * 10) %>%
+  na.omit() %>%
+  arrange(GirthClass) %>%
+  pivot_wider(names_from = GirthClass, values_from = vol) %>%
+  arrange(Species) %>%
+  kbl(caption = status_name[i], longtable = TRUE, booktabs = TRUE) %>%
+  #  add_header_above(c("" = 1, "Girth class (cm)" = 10)) %>% 
+  kable_styling(latex_options = "repeat_header", full_width = F)
+print(p)
+}
+```
+
+\pagebreak \cleardoublepage 
+
+
+## 33. Suggested Exclusive Working Circles through Decision Support System
+
+```{r section 33, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+resource_survey_volume %>%
+  group_by(Grid) %>%
+  summarise(Range = Range[1], "Comp. number" = Comp[1], Status = Status[1],
+            Latitude = Latitude[1], Longitude = Longitude[1],
+            "Slope (degrees)" = Slope[1], "Forest type" = Forest_type[1],
+            "Site Quality" = Site_quality[1], Density = Density[1],
+            "Suggested Working Circle" = Suggested_WC[1]) %>%
+  kbl(caption = "Suggested Exclusive Working Circles through Decision Support System", longtable = TRUE, booktabs = TRUE) %>%
+  kable_styling(latex_options = "repeat_header", full_width = F)
+```
+
+
+\pagebreak \cleardoublepage 
+
+
+## 34. WC-wise, species-wise and girth class (cm)-wise per hectare average tree number
+
+```{r section 34, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+wc_name <- sort(unique(resource_survey_volume$WC))
+if(length(wc_name) > 0){
+for(i in 1:length(wc_name)){
+num_grid <- resource_survey_volume %>%
+  filter(WC == wc_name[i]) %>%
+  summarise(grid = length(unique(Grid))) %>%
+  .$grid
+p <- resource_survey_volume %>%
+  filter(WC == wc_name[i]) %>%
+  group_by(GirthClass, Species) %>%
+  summarise(n = n() / num_grid * 10) %>%
+  na.omit() %>%
+  arrange(GirthClass) %>%
+  pivot_wider(names_from = GirthClass, values_from = n) %>%
+  arrange(Species) %>%
+  kbl(caption = wc_name[i], longtable = TRUE, booktabs = TRUE) %>%
+  #  add_header_above(c("" = 1, "Girth class (cm)" = 10)) %>% 
+  kable_styling(latex_options = "repeat_header", full_width = F)
+print(p)
+}
+}
+```
+
+\pagebreak \cleardoublepage 
+
+## 35. WC-wise, species-wise and girth class (cm)-wise per hectare average basal area (sq m)
+
+```{r section 35, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+wc_name <- sort(unique(resource_survey_volume$WC))
+if(length(wc_name) > 0){
+for(i in 1:length(wc_name)){
+num_grid <- resource_survey_volume %>%
+  filter(WC == wc_name[i]) %>%
+  summarise(grid = length(unique(Grid))) %>%
+  .$grid
+p <- resource_survey_volume %>%
+  filter(WC == wc_name[i]) %>%
+  group_by(GirthClass, Species) %>%
+  summarise(ba = sum(BasalArea) / num_grid * 10) %>%
+  na.omit() %>%
+  arrange(GirthClass) %>%
+  pivot_wider(names_from = GirthClass, values_from = ba) %>%
+  arrange(Species) %>%
+  kbl(caption = wc_name[i], longtable = TRUE, booktabs = TRUE) %>%
+  #  add_header_above(c("" = 1, "Girth class (cm)" = 10)) %>% 
+  kable_styling(latex_options = "repeat_header", full_width = F)
+print(p)
+}
+}
+```
+
+\pagebreak \cleardoublepage 
+
+## 36. WC-wise, species-wise and girth class (cm)-wise per hectare average tree volume (cum)
+
+```{r section 36, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+wc_name <- sort(unique(resource_survey_volume$WC))
+if(length(wc_name) > 0){
+for(i in 1:length(wc_name)){
+num_grid <- resource_survey_volume %>%
+  filter(WC == wc_name[i]) %>%
+  summarise(grid = length(unique(Grid))) %>%
+  .$grid
+p <- resource_survey_volume %>%
+  filter(WC == wc_name[i]) %>%
+  group_by(GirthClass, Species) %>%
+  summarise(vol = sum(Volume) / num_grid * 10) %>%
+  na.omit() %>%
+  arrange(GirthClass) %>%
+  pivot_wider(names_from = GirthClass, values_from = vol) %>%
+  arrange(Species) %>%
+  kbl(caption = wc_name[i], longtable = TRUE, booktabs = TRUE) %>%
+  #  add_header_above(c("" = 1, "Girth class (cm)" = 10)) %>% 
+  kable_styling(latex_options = "repeat_header", full_width = F)
+print(p)
+}
+}
+```
+
+\pagebreak \cleardoublepage 
+
+## 37. Diversity indices
+
+```{r section 37, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+grid_name <- sort(unique(resource_survey_volume$Grid))
+Simpson <- vector()
+SimpsonDiversity <- vector()
+SimpsonReciprocal <- vector()
+Shannon <- vector()
+ShannonS <- vector()
+ShannonHmax <- vector()
+ShannonEven <- vector()
+for(i in 1:length(grid_name)){
+species_n <- resource_survey_volume %>%
+  filter(Grid == grid_name[i]) %>%
+  group_by(Species) %>%
+  summarise(n = n()) 
+Simpson[i] <- species_n %>%
+  mutate(numerator = n * (n-1)) %>%
+  summarise(D = 1 - sum(numerator) / sum(n) / (sum(n) - 1)) %>%
+  .$D
+SimpsonDiversity[i] <- 1 - Simpson[i]
+SimpsonReciprocal[i] <- 1 / Simpson[i]
+Shannon[i] <- species_n %>%
+  mutate(p = n / sum(n)) %>%
+  mutate(h = p * log(p)) %>%
+  summarise(H = -sum(h)) %>%
+  .$H
+ShannonS[i] <- species_n %>%
+  summarise(S = n()) %>%
+  .$S
+ShannonHmax[i] <- log(ShannonS[i])
+ShannonEven[i] <- Shannon[i] / ShannonHmax[i]
+}
+p <- tibble(Grid = grid_name, "Simpson Index" = Simpson, "Simpson Diversity Index" = SimpsonDiversity, "Simpson Reciprocal Index" = SimpsonReciprocal, "Shannon-Wiener Index" = Shannon, "Shannon Evenness Index" = ShannonEven)
+p %>% 
+  kbl(caption = "Diversity indices", longtable = TRUE, booktabs = TRUE) %>%
+  kable_styling(latex_options = "repeat_header", full_width = F)
+```
+
+\pagebreak \cleardoublepage
+
+## 38. Importance Value Indices (Alphabetical)
+
+```{r section 38, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+ivi_table %>% 
+  select(Species, num_grids, freq, rel_freq, num_indiv, density, rel_density, sum_ba, rel_ba, ivi) %>%
+  rename("Number of grids where species is found" = num_grids, "Frequency (%)" = freq, "Relative frequency (%)" = rel_freq, "Number of individuals of species" = num_indiv, "Density (per Ha.)" = density, "Relative density (%)" = rel_density, "Sum of basal area (sq. m)" = sum_ba, "Relative basal area (%)" = rel_ba, "IVI out of 300" = ivi) %>%
+  kbl(caption = "Importance value indices of species", longtable = TRUE, booktabs = TRUE) %>%
+  kable_styling(latex_options = "repeat_header", full_width = F) %>%
+  column_spec(1:10, width = "2cm")
+```
+
+\pagebreak \cleardoublepage
+
+## 39. Importance Value Indices (Sorted by IVI)
+
+```{r section 39, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+ivi_table %>% 
+  select(Species, num_grids, freq, rel_freq, num_indiv, density, rel_density, sum_ba, rel_ba, ivi) %>%
+  arrange(desc(ivi)) %>%
+  rename("Number of grids where species is found" = num_grids, "Frequency (%)" = freq, "Relative frequency (%)" = rel_freq, "Number of individuals of species" = num_indiv, "Density (per Ha.)" = density, "Relative density (%)" = rel_density, "Sum of basal area (sq. m)" = sum_ba, "Relative basal area (%)" = rel_ba, "IVI out of 300" = ivi) %>%
+  kbl(caption = "Importance value indices of species", longtable = TRUE, booktabs = TRUE) %>%
+  kable_styling(latex_options = "repeat_header", full_width = F) %>%
+  column_spec(1:10, width = "2cm")
+gc()
+```
+
+\pagebreak \cleardoublepage
+
+## 40. License and other information
+The Shiny app (available at https://0xfn3m-ankur-awadhiya.shinyapps.io/Annexure3/) used to create this document is released under the CC BY-NC-SA 4.0 International license. This means that everyone is free to use the app to generate working plan annexures, provided that 
+
+1. they include proper attribution (Chapter: License and other information) in their working plan, 
+
+2. use the app (and the generated document) for non-commercial purposes (they do not sell the document to any party), and 
+
+3. distribute their contributions under the same license as this original license.
+
+Please provide suggestions for improvements to mp572\@ifs.nic.in
