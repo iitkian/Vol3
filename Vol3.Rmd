@@ -331,8 +331,12 @@ cat(paste0("![](", "q-", i, ".png){width=50%}"), "\n")
 cat("\n\\pagebreak\n")
 }
 }
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
 gc()
 ```
+
 
 \pagebreak \cleardoublepage
 
@@ -1203,6 +1207,9 @@ ivi_table %>%
   kbl(caption = "Importance value indices of species", longtable = TRUE, booktabs = TRUE) %>%
   kable_styling(latex_options = "repeat_header", full_width = F) %>%
   column_spec(1:10, width = "2cm")
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
 gc()
 ```
 
