@@ -265,7 +265,8 @@ resource_survey_volume %>%
             "No. of trees" = n(),
             "Volume (cum)" = sum(Volume)) %>%
   kbl(caption = "Grid-wise tree number and volume (cum) in sample plots", longtable = TRUE, booktabs = TRUE) %>%
-  kable_styling(latex_options = "repeat_header")
+  kable_styling(latex_options = "repeat_header")%>%
+  column_spec(3:14, width = "1.5cm")
 ```
 
 \pagebreak \cleardoublepage 
